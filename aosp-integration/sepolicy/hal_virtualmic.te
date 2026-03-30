@@ -1,0 +1,16 @@
+# SELinux policy for Virtual Microphone HAL
+#
+# Define a dedicated socket type for virtual mic IPC
+
+# Define virtual mic socket type
+type virtualmic_socket, file_type, data_file_type;
+
+# Allow hal_audio_default to create the socket directory and socket file
+allow hal_audio_default virtualmic_socket:dir { search read write add_name remove_name create getattr setattr };
+allow hal_audio_default virtualmic_socket:sock_file { create read write unlink getattr setattr };
+
+# Allow creating and using Unix domain sockets  
+allow hal_audio_default self:unix_stream_socket { create bind listen accept read write getattr setattr };
+
+# Allow audioserver to find the virtualmic service
+allow audioserver hal_audio_service:service_manager find;

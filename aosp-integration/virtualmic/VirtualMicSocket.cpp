@@ -26,6 +26,15 @@ VirtualMicSocket::~VirtualMicSocket() {
 }
 
 bool VirtualMicSocket::start() {
+    // Create socket directory if it doesn't exist
+    // Extract directory path from socket path
+    const char* socketDir = "/data/vendor/virtualmic";
+    if (mkdir(socketDir, 0755) < 0 && errno != EEXIST) {
+        ALOGE("Failed to create socket directory %s: %s", socketDir, strerror(errno));
+        return false;
+    }
+    chmod(socketDir, 0777);  // Allow access
+    
     // Create Unix domain socket
     mServerFd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (mServerFd < 0) {

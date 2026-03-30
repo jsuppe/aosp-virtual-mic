@@ -1,0 +1,3 @@
+# Virtual mic socket
+/data/vendor/virtualmic(/.*)?  u:object_r:virtualmic_socket:s0
+

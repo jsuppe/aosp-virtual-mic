@@ -1,0 +1,2 @@
+# Add to service_contexts:
+android.hardware.audio.core.IModule/virtualmic u:object_r:hal_audio_service:s0
