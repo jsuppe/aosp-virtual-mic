@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#1a1a1a">
+
+    <!-- Title -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Virtual Microphone Pipeline Test"
+        android:textColor="#ffffff"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:padding="8dp"
+        android:background="#333333"/>
+
+    <!-- Labels -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="🔊 Source Audio"
+            android:textColor="#4CAF50"
+            android:textSize="14sp"
+            android:gravity="center"
+            android:padding="4dp"/>
+        
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="🎤 Virtual Mic"
+            android:textColor="#2196F3"
+            android:textSize="14sp"
+            android:gravity="center"
+            android:padding="4dp"/>
+    </LinearLayout>
+
+    <!-- Side-by-side waveforms -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:padding="4dp">
+
+        <!-- Left: Source waveform -->
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="4dp"
+            android:background="#222222">
+            
+            <com.example.vmictest.WaveformView
+                android:id="@+id/source_waveform"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"/>
+        </FrameLayout>
+
+        <!-- Right: Virtual mic output -->
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="4dp"
+            android:background="#222222">
+            
+            <com.example.vmictest.WaveformView
+                android:id="@+id/mic_waveform"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"/>
+        </FrameLayout>
+    </LinearLayout>
+
+    <!-- Signal type buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:padding="8dp"
+        android:background="#2a2a2a">
+        
+        <Button
+            android:id="@+id/btn_sine"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Sine"
+            android:layout_margin="4dp"/>
+        
+        <Button
+            android:id="@+id/btn_sweep"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Sweep"
+            android:layout_margin="4dp"/>
+        
+        <Button
+            android:id="@+id/btn_noise"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Noise"
+            android:layout_margin="4dp"/>
+    </LinearLayout>
+
+    <!-- Status bar -->
+    <TextView
+        android:id="@+id/status_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Initializing..."
+        android:textColor="#888888"
+        android:textSize="12sp"
+        android:gravity="center"
+        android:padding="8dp"
+        android:background="#2a2a2a"/>
+
+</LinearLayout>
