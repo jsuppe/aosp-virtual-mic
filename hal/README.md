@@ -77,12 +77,53 @@ Audio input HAL that receives PCM samples from renderer apps via shared memory.
 ## Status
 
 - [x] AudioBufferHeader - Shared memory layout
-- [x] VirtualMicSource - Read from shared memory
+- [x] VirtualMicSource - Read from shared memory  
 - [x] VirtualMicSocket - Socket server
 - [x] VirtualMicClient - Renderer library
-- [ ] VirtualMicModule - Audio HAL module
-- [ ] VirtualMicStream - Audio input stream
-- [ ] service.cpp - HAL service
+- [x] VirtualMicModule - Audio module (simplified)
+- [x] VirtualMicStream - Audio input stream
+- [ ] AIDL HAL integration - Wrap in proper AIDL interfaces
+- [ ] audio_policy_configuration.xml - Add virtual mic device
 - [ ] init.rc, VINTF manifest
-- [ ] Build integration
+- [ ] Build integration into AOSP
 - [ ] Test app
+
+## AOSP Integration Path
+
+The Android Audio HAL is more complex than Camera HAL. Full integration requires:
+
+### 1. Create Module Type
+Add to `hardware/interfaces/audio/aidl/default/`:
+```cpp
+// Module.cpp - Add to typeFromString()
+case "virtualmic":
+    return Module::Type::VIRTUALMIC;
+
+// Add ModuleVirtualMic.cpp similar to ModuleRemoteSubmix.cpp
+```
+
+### 2. Audio Policy Configuration
+Add device to `audio_policy_configuration.xml`:
+```xml
+<module name="virtualmic" halVersion="3.0">
+    <mixPorts>
+        <mixPort name="virtual_mic_input" role="sink">
+            <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
+                     samplingRates="48000"
+                     channelMasks="AUDIO_CHANNEL_IN_MONO"/>
+        </mixPort>
+    </mixPorts>
+    <devicePorts>
+        <devicePort tagName="Virtual Mic In" type="AUDIO_DEVICE_IN_REMOTE_SUBMIX" role="source">
+            <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
+                     samplingRates="48000"
+                     channelMasks="AUDIO_CHANNEL_IN_MONO"/>
+        </devicePort>
+    </devicePorts>
+</module>
+```
+
+### 3. Alternative: Standalone Service
+For quicker testing, can run as standalone service that:
+- Registers with ServiceManager
+- Provides audio via alternative path (AudioRecord with specific source)
