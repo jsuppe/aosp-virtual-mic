@@ -1,0 +1,21 @@
+// Virtual Mic Test Renderer
+// Build and push to device to test the virtual mic HAL
+
+cc_binary {
+    name: "virtual_mic_renderer",
+    srcs: ["virtual_mic_renderer.cpp"],
+    
+    cflags: [
+        "-Wall",
+        "-Werror",
+        "-Wno-unused-parameter",
+    ],
+    
+    shared_libs: [
+        "liblog",
+        "libcutils",
+    ],
+    
+    // For development/testing only
+    vendor: true,
+}
