@@ -7,69 +7,57 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.util.AttributeSet
 import android.view.View
-import kotlin.math.abs
 
 /**
- * Custom view for displaying audio waveforms in real-time.
+ * Real-time waveform visualization view.
+ * Shows audio samples as a scrolling waveform.
  */
 class WaveformView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
     defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
-    
-    private val waveformPaint = Paint().apply {
-        color = Color.GREEN
-        strokeWidth = 2f
+
+    private val wavePaint = Paint().apply {
+        color = Color.parseColor("#00E676")  // Bright green
+        strokeWidth = 3f
         style = Paint.Style.STROKE
         isAntiAlias = true
+    }
+    
+    private val centerLinePaint = Paint().apply {
+        color = Color.parseColor("#444444")
+        strokeWidth = 1f
+        style = Paint.Style.STROKE
     }
     
     private val gridPaint = Paint().apply {
-        color = Color.argb(80, 255, 255, 255)
+        color = Color.parseColor("#333333")
         strokeWidth = 1f
         style = Paint.Style.STROKE
     }
-    
-    private val centerPaint = Paint().apply {
-        color = Color.argb(120, 255, 255, 255)
-        strokeWidth = 1f
-        style = Paint.Style.STROKE
-    }
-    
-    private val peakPaint = Paint().apply {
-        color = Color.YELLOW
-        textSize = 32f
-        isAntiAlias = true
-    }
-    
+
     private val path = Path()
-    private var samples = FloatArray(512)
-    private var peakLevel = 0f
-    private var peakDecay = 0.95f
     
-    // Ring buffer for scrolling waveform
-    private val historySize = 2048
-    private val history = FloatArray(historySize)
-    private var historyIndex = 0
+    // Ring buffer of samples for display
+    private val displaySamples = FloatArray(512)
+    private var writeIndex = 0
     
-    fun updateSamples(newSamples: FloatArray) {
-        // Add to history buffer
-        for (sample in newSamples) {
-            history[historyIndex] = sample
-            historyIndex = (historyIndex + 1) % historySize
-            
-            // Track peak
-            val absSample = abs(sample)
-            if (absSample > peakLevel) {
-                peakLevel = absSample
+    // For smooth animation
+    private var targetSamples = FloatArray(512)
+    
+    fun updateWaveform(samples: ShortArray, length: Int) {
+        // Downsample to fit display buffer
+        val step = maxOf(1, length / displaySamples.size)
+        var j = 0
+        for (i in 0 until length step step) {
+            if (j < displaySamples.size) {
+                // Normalize to -1..1
+                displaySamples[j] = samples[i] / 32768f
+                j++
             }
         }
-        
-        // Decay peak
-        peakLevel *= peakDecay
-        
-        invalidate()
+        postInvalidate()
     }
     
     override fun onDraw(canvas: Canvas) {
@@ -79,56 +67,35 @@ class WaveformView @JvmOverloads constructor(
         val h = height.toFloat()
         val centerY = h / 2
         
-        // Draw background
-        canvas.drawColor(Color.parseColor("#1a1a1a"))
-        
         // Draw grid lines
         for (i in 1..3) {
             val y = h * i / 4
             canvas.drawLine(0f, y, w, y, gridPaint)
         }
-        for (i in 1..7) {
-            val x = w * i / 8
-            canvas.drawLine(x, 0f, x, h, gridPaint)
-        }
         
         // Draw center line
-        canvas.drawLine(0f, centerY, w, centerY, centerPaint)
+        canvas.drawLine(0f, centerY, w, centerY, centerLinePaint)
         
-        // Draw waveform from history
+        // Draw waveform
         path.reset()
-        val samplesPerPixel = historySize / w
-        var firstPoint = true
+        val sampleWidth = w / displaySamples.size
         
-        for (px in 0 until w.toInt()) {
-            // Find sample for this pixel
-            val sampleIdx = ((historyIndex - historySize + px * samplesPerPixel).toInt() + historySize) % historySize
-            val sample = history[sampleIdx]
+        for (i in displaySamples.indices) {
+            val x = i * sampleWidth
+            val y = centerY - displaySamples[i] * (h / 2) * 0.9f
             
-            val x = px.toFloat()
-            val y = centerY - sample * (h / 2 - 10)
-            
-            if (firstPoint) {
+            if (i == 0) {
                 path.moveTo(x, y)
-                firstPoint = false
             } else {
                 path.lineTo(x, y)
             }
         }
         
-        canvas.drawPath(path, waveformPaint)
-        
-        // Draw peak meter
-        val peakHeight = peakLevel * (h / 2 - 10)
-        canvas.drawRect(w - 20, centerY - peakHeight, w - 5, centerY + peakHeight, waveformPaint)
-        
-        // Draw peak level text
-        val peakDb = if (peakLevel > 0) (20 * kotlin.math.log10(peakLevel.toDouble())).toInt() else -60
-        canvas.drawText("${peakDb}dB", w - 80, 30f, peakPaint)
+        canvas.drawPath(path, wavePaint)
     }
     
-    fun setColor(color: Int) {
-        waveformPaint.color = color
-        invalidate()
+    fun setWaveColor(color: Int) {
+        wavePaint.color = color
+        postInvalidate()
     }
 }

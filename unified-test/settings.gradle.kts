@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "VMicUnifiedTest"
+rootProject.name = "VMicTest"
 include(":app")

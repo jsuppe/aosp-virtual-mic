@@ -1,0 +1,6 @@
+# Create virtualmic socket directory at boot
+# Required for Virtual Microphone HAL to create its Unix domain socket
+
+on post-fs-data
+    mkdir /data/vendor/virtualmic 0777 audioserver audio
+    restorecon /data/vendor/virtualmic

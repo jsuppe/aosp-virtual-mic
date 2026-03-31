@@ -69,10 +69,10 @@ void VirtualMicSource::onRendererConnected(int fd, size_t size) {
         close(mShmFd);
     }
     
-    // Map the new shared memory (read-only for HAL)
+    // Map the new shared memory (read-write for HAL to update read position)
     mShmFd = fd;
     mMappedSize = size;
-    mMappedMemory = mmap(nullptr, size, PROT_READ, MAP_SHARED, fd, 0);
+    mMappedMemory = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     
     if (mMappedMemory == MAP_FAILED) {
         ALOGE("Failed to mmap shared memory: %s", strerror(errno));
@@ -85,8 +85,12 @@ void VirtualMicSource::onRendererConnected(int fd, size_t size) {
     // Set up pointers
     mHeader = static_cast<AudioBufferHeader*>(mMappedMemory);
     
+    ALOGI("Header check: sizeof(AudioBufferHeader)=%zu, magic=0x%08X (expected 0x%08X), version=%u (expected %u)",
+          sizeof(AudioBufferHeader), mHeader->magic, AUDIO_BUFFER_MAGIC, 
+          mHeader->version, AUDIO_BUFFER_VERSION);
+    
     if (!mHeader->isValid()) {
-        ALOGE("Invalid audio buffer header");
+        ALOGE("Invalid audio buffer header - magic or version mismatch");
         munmap(mMappedMemory, mMappedSize);
         mMappedMemory = nullptr;
         mHeader = nullptr;
@@ -104,16 +108,25 @@ void VirtualMicSource::onRendererConnected(int fd, size_t size) {
 }
 
 size_t VirtualMicSource::read(void* buffer, size_t bytes) {
+    // Hold lock for entire read to prevent race with disconnect
+    std::lock_guard<std::mutex> lock(mLock);
+    
+    // Very defensive checks - if ANYTHING is not perfectly ready, return silence
     if (!mRendererConnected.load(std::memory_order_acquire)) {
-        // No renderer - generate silence
         memset(buffer, 0, bytes);
-        mSilenceSamplesGenerated += bytes / 2;  // Assuming 16-bit
         return bytes;
     }
     
-    std::lock_guard<std::mutex> lock(mLock);
+    if (mMappedMemory == nullptr || mMappedMemory == MAP_FAILED ||
+        mHeader == nullptr || mRingBuffer == nullptr) {
+        ALOGW("read: invalid memory state, returning silence");
+        memset(buffer, 0, bytes);
+        return bytes;
+    }
     
-    if (mHeader == nullptr || mRingBuffer == nullptr) {
+    // Validate header before accessing its members
+    if (mHeader->magic != AUDIO_BUFFER_MAGIC) {
+        ALOGW("read: header magic invalid (0x%08X), returning silence", mHeader->magic);
         memset(buffer, 0, bytes);
         return bytes;
     }

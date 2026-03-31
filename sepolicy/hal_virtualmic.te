@@ -1,0 +1,47 @@
+# SELinux policy for Virtual Microphone HAL
+#
+# Allows the audio HAL to create a Unix domain socket in /data/vendor/virtualmic/
+# and accept connections from renderer apps that want to inject audio.
+#
+# NOTE: Full production policy requires either:
+# 1. A dedicated service domain for the socket server, or
+# 2. Using a permissive domain for the HAL during development
+# For now, this provides the basic permissions. Use setenforce 0 for testing.
+
+# Define virtual mic socket type
+type virtualmic_socket, file_type, data_file_type;
+
+# ============================================================================
+# HAL permissions (hal_audio_default runs the audio service)
+# ============================================================================
+
+# Create and manage /data/vendor/virtualmic/ directory
+allow hal_audio_default vendor_data_file:dir { search write add_name };
+allow hal_audio_default virtualmic_socket:dir { create read write add_name remove_name getattr setattr search };
+
+# Create and manage the socket file
+allow hal_audio_default virtualmic_socket:sock_file { create read write unlink getattr setattr };
+
+# Unix domain socket operations
+allow hal_audio_default self:unix_stream_socket { create bind listen accept read write getattr setattr };
+
+# ============================================================================
+# Renderer app permissions
+# ============================================================================
+# NOTE: Android's neverallow rules prevent untrusted_app and shell from
+# directly connecting to hal_audio_default unix_stream_socket.
+# For testing: use setenforce 0
+# For production: need a dedicated domain or signed system app
+
+# Allow shell and apps to search the socket directory
+allow shell virtualmic_socket:dir search;
+allow untrusted_app virtualmic_socket:dir search;
+
+# Allow access to the socket file
+allow shell virtualmic_socket:sock_file { read write getattr };
+allow untrusted_app virtualmic_socket:sock_file { read write getattr };
+
+# ============================================================================
+# audioserver permissions
+# ============================================================================
+allow audioserver hal_audio_service:service_manager find;

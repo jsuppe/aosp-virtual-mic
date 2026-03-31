@@ -2,212 +2,217 @@ package com.example.vmictest
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Bundle
 import android.util.Log
 import android.widget.Button
+import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import kotlin.concurrent.thread
 import kotlin.math.abs
-import kotlin.math.sin
+import kotlin.math.sqrt
 
-/**
- * Virtual Microphone Test App
- * 
- * Displays side-by-side waveforms:
- * - Left: Audio being sent to virtual mic (source)
- * - Right: Audio received from virtual mic (via AudioRecord)
- * 
- * If both match → pipeline works!
- */
 class MainActivity : AppCompatActivity() {
     
     companion object {
-        private const val TAG = "VMicTest"
-        private const val REQUEST_RECORD_PERMISSION = 1
+        private const val TAG = "VirtualMicTest"
         private const val SAMPLE_RATE = 48000
-        private const val BUFFER_SIZE = 512
+        private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_STEREO
+        private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
+        private const val PERMISSION_REQUEST_CODE = 123
     }
     
-    // Views
-    private lateinit var sourceWaveform: WaveformView
-    private lateinit var micWaveform: WaveformView
-    private lateinit var statusText: TextView
-    private lateinit var btnSine: Button
-    private lateinit var btnSweep: Button
-    private lateinit var btnNoise: Button
-    
-    // Audio
     private var audioRecord: AudioRecord? = null
     private var isRecording = false
-    private var isGenerating = false
-    
-    // Native
-    private var nativeGenerator: Long = 0
-    
-    // Signal type
-    private var signalType = SignalType.SINE
-    private var frequency = 440.0
-    
-    enum class SignalType { SINE, SWEEP, NOISE, CHIRP }
+    private lateinit var statusText: TextView
+    private lateinit var frequencyText: TextView
+    private lateinit var amplitudeText: TextView
+    private lateinit var waveformText: TextView
+    private lateinit var waveformView: WaveformView
+    private lateinit var levelMeter: ProgressBar
+    private lateinit var recordButton: Button
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         
-        sourceWaveform = findViewById(R.id.source_waveform)
-        micWaveform = findViewById(R.id.mic_waveform)
-        statusText = findViewById(R.id.status_text)
-        btnSine = findViewById(R.id.btn_sine)
-        btnSweep = findViewById(R.id.btn_sweep)
-        btnNoise = findViewById(R.id.btn_noise)
+        statusText = findViewById(R.id.statusText)
+        frequencyText = findViewById(R.id.frequencyText)
+        amplitudeText = findViewById(R.id.amplitudeText)
+        waveformText = findViewById(R.id.waveformText)
+        waveformView = findViewById(R.id.waveformView)
+        levelMeter = findViewById(R.id.levelMeter)
+        recordButton = findViewById(R.id.recordButton)
         
-        btnSine.setOnClickListener { setSignalType(SignalType.SINE) }
-        btnSweep.setOnClickListener { setSignalType(SignalType.SWEEP) }
-        btnNoise.setOnClickListener { setSignalType(SignalType.NOISE) }
+        recordButton.setOnClickListener {
+            if (isRecording) {
+                stopRecording()
+            } else {
+                checkPermissionAndRecord()
+            }
+        }
         
-        checkPermissionAndStart()
+        statusText.text = "Ready. Run virtual_mic_renderer, then tap Record."
     }
     
-    private fun setSignalType(type: SignalType) {
-        signalType = type
-        nativeSetSignalType(nativeGenerator, type.ordinal)
-        updateStatus()
-    }
-    
-    private fun checkPermissionAndStart() {
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+    private fun checkPermissionAndRecord() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) 
+            != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.RECORD_AUDIO),
-                REQUEST_RECORD_PERMISSION
+                this, 
+                arrayOf(Manifest.permission.RECORD_AUDIO), 
+                PERMISSION_REQUEST_CODE
             )
         } else {
-            startAudio()
+            startRecording()
         }
     }
     
     override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
+        requestCode: Int, 
+        permissions: Array<out String>, 
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_RECORD_PERMISSION && 
+        if (requestCode == PERMISSION_REQUEST_CODE && 
             grantResults.isNotEmpty() && 
             grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            startAudio()
-        } else {
-            statusText.text = "Microphone permission denied"
+            startRecording()
         }
-    }
-    
-    private fun startAudio() {
-        // Initialize native audio generator
-        nativeGenerator = nativeCreateGenerator(SAMPLE_RATE, BUFFER_SIZE)
-        if (nativeGenerator == 0L) {
-            statusText.text = "Failed to create audio generator"
-            return
-        }
-        
-        // Start generating audio to shared memory
-        isGenerating = true
-        Thread {
-            while (isGenerating) {
-                val samples = nativeGenerateFrame(nativeGenerator)
-                if (samples != null) {
-                    runOnUiThread {
-                        sourceWaveform.updateSamples(samples)
-                    }
-                }
-                Thread.sleep(10) // ~100 updates/sec
-            }
-        }.start()
-        
-        // Start recording from virtual microphone
-        startRecording()
-        
-        updateStatus()
     }
     
     private fun startRecording() {
-        val minBufferSize = AudioRecord.getMinBufferSize(
-            SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT
-        )
+        val bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
+        Log.i(TAG, "Buffer size: $bufferSize")
         
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) 
             != PackageManager.PERMISSION_GRANTED) {
+            statusText.text = "Permission denied"
             return
         }
         
-        // Try to find virtual mic (device 100) or use default
+        val audioSource = MediaRecorder.AudioSource.MIC
+        Log.i(TAG, "Using audio source: $audioSource (MIC)")
+        
         audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
+            audioSource,
             SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-            minBufferSize * 2
+            CHANNEL_CONFIG,
+            AUDIO_FORMAT,
+            bufferSize * 2
         )
         
         if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-            Log.e(TAG, "AudioRecord failed to initialize")
-            statusText.text = "Failed to open microphone"
+            statusText.text = "Failed to initialize AudioRecord"
+            Log.e(TAG, "AudioRecord not initialized")
             return
         }
         
         isRecording = true
+        recordButton.text = "STOP"
+        recordButton.backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#F44336"))
+        statusText.text = "Recording from mic..."
+        
         audioRecord?.startRecording()
         
-        Thread {
-            val buffer = ShortArray(BUFFER_SIZE)
+        thread {
+            val buffer = ShortArray(4096)
+            var frameCount = 0
+            val startTime = System.currentTimeMillis()
+            
             while (isRecording) {
-                val read = audioRecord?.read(buffer, 0, BUFFER_SIZE) ?: 0
+                val read = audioRecord?.read(buffer, 0, buffer.size) ?: 0
                 if (read > 0) {
-                    // Convert to float for waveform display
-                    val floatBuffer = FloatArray(read) { buffer[it] / 32768f }
-                    runOnUiThread {
-                        micWaveform.updateSamples(floatBuffer)
-                    }
+                    frameCount += read
+                    analyzeAudio(buffer, read)
                 }
             }
-        }.start()
+            
+            val duration = (System.currentTimeMillis() - startTime) / 1000.0
+            Log.i(TAG, "Recorded $frameCount frames in $duration seconds")
+        }
     }
     
-    private fun updateStatus() {
-        val signalName = when (signalType) {
-            SignalType.SINE -> "440Hz Sine"
-            SignalType.SWEEP -> "Frequency Sweep"
-            SignalType.NOISE -> "White Noise"
-            SignalType.CHIRP -> "Chirp"
+    private fun stopRecording() {
+        isRecording = false
+        audioRecord?.stop()
+        audioRecord?.release()
+        audioRecord = null
+        recordButton.text = "RECORD"
+        recordButton.backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#4CAF50"))
+        statusText.text = "Stopped"
+    }
+    
+    private fun analyzeAudio(buffer: ShortArray, length: Int) {
+        // Extract left channel only for analysis
+        val monoSamples = ShortArray(length / 2)
+        for (i in monoSamples.indices) {
+            monoSamples[i] = buffer[i * 2]
         }
-        statusText.text = "$signalName | ${SAMPLE_RATE}Hz | Buffer: $BUFFER_SIZE"
+        
+        // Calculate RMS amplitude
+        var sumSquares = 0.0
+        var maxSample = 0
+        for (i in monoSamples.indices) {
+            val sample = abs(monoSamples[i].toInt())
+            sumSquares += sample * sample
+            if (sample > maxSample) maxSample = sample
+        }
+        val rms = sqrt(sumSquares / monoSamples.size)
+        val rmsDb = 20 * kotlin.math.log10(rms / 32767.0 + 1e-10)
+        
+        // Zero-crossing rate for frequency estimation
+        var zeroCrossings = 0
+        for (i in 1 until monoSamples.size) {
+            val prev = monoSamples[i-1]
+            val curr = monoSamples[i]
+            if ((prev >= 0 && curr < 0) || (prev < 0 && curr >= 0)) {
+                zeroCrossings++
+            }
+        }
+        val durationSec = monoSamples.size.toDouble() / SAMPLE_RATE
+        val estimatedFreq = if (durationSec > 0) zeroCrossings / durationSec / 2 else 0.0
+        
+        // Level meter (0-100)
+        val level = (maxSample * 100 / 32767).coerceIn(0, 100)
+        
+        runOnUiThread {
+            frequencyText.text = "Freq: %.0f Hz".format(estimatedFreq)
+            amplitudeText.text = "RMS: %.1f dB, Peak: %d".format(rmsDb, maxSample)
+            levelMeter.progress = level
+            
+            // Update waveform
+            waveformView.updateWaveform(monoSamples, monoSamples.size)
+            
+            // Color code based on expected 440Hz
+            when {
+                estimatedFreq > 420 && estimatedFreq < 460 -> {
+                    // Green - close to 440Hz
+                    frequencyText.setTextColor(Color.parseColor("#00E676"))
+                    waveformView.setWaveColor(Color.parseColor("#00E676"))
+                }
+                maxSample < 100 -> {
+                    // Gray - silence
+                    frequencyText.setTextColor(Color.parseColor("#888888"))
+                    waveformView.setWaveColor(Color.parseColor("#444444"))
+                }
+                else -> {
+                    // Cyan - different frequency (still valid audio)
+                    frequencyText.setTextColor(Color.parseColor("#00BCD4"))
+                    waveformView.setWaveColor(Color.parseColor("#00BCD4"))
+                }
+            }
+        }
     }
     
     override fun onDestroy() {
         super.onDestroy()
-        isGenerating = false
-        isRecording = false
-        audioRecord?.stop()
-        audioRecord?.release()
-        if (nativeGenerator != 0L) {
-            nativeDestroyGenerator(nativeGenerator)
-        }
-    }
-    
-    // Native methods
-    private external fun nativeCreateGenerator(sampleRate: Int, bufferSize: Int): Long
-    private external fun nativeGenerateFrame(generator: Long): FloatArray?
-    private external fun nativeSetSignalType(generator: Long, type: Int)
-    private external fun nativeDestroyGenerator(generator: Long)
-    
-    companion object {
-        init {
-            System.loadLibrary("vmic_unified_test")
-        }
+        stopRecording()
     }
 }

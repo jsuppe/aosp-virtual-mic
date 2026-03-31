@@ -55,7 +55,7 @@ private:
     mutable std::mutex mLock;
     
     // For generating silence when no renderer
-    uint64_t mSilenceSamplesGenerated = 0;
+    // uint64_t mSilenceSamplesGenerated = 0;  // unused
 };
 
 }  // namespace aidl::android::hardware::audio::virtualmic
