@@ -17,6 +17,18 @@
         android:padding="8dp"
         android:background="#16213e" />
 
+    <!-- Sending frequency (what renderer is outputting) -->
+    <TextView
+        android:id="@+id/sendingText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Sending: -- Hz"
+        android:textColor="#FF9800"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:padding="4dp" />
+
     <!-- Status -->
     <TextView
         android:id="@+id/statusText"
@@ -34,10 +46,10 @@
         android:layout_height="wrap_content"
         android:text="Freq: -- Hz"
         android:textColor="#00E676"
-        android:textSize="48sp"
+        android:textSize="42sp"
         android:textStyle="bold"
         android:gravity="center"
-        android:padding="16dp" />
+        android:padding="8dp" />
 
     <!-- Amplitude info -->
     <TextView
@@ -54,9 +66,9 @@
     <com.example.vmictest.WaveformView
         android:id="@+id/waveformView"
         android:layout_width="match_parent"
-        android:layout_height="200dp"
-        android:layout_marginTop="16dp"
-        android:layout_marginBottom="16dp"
+        android:layout_height="150dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="8dp"
         android:background="#0f0f1a" />
 
     <!-- Simple level meter -->
@@ -70,31 +82,70 @@
         android:progressTint="#00BCD4"
         android:layout_marginTop="8dp" />
 
-    <!-- Expected frequency indicator -->
+    <!-- Alignment metrics -->
+    <TextView
+        android:id="@+id/alignmentText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Correlation: --, Phase: --"
+        android:textColor="#00BCD4"
+        android:textSize="16sp"
+        android:gravity="center"
+        android:padding="4dp" />
+
+    <!-- Legend -->
     <TextView
         android:id="@+id/waveformText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Expected: 440 Hz sine wave\n(green = match, red = mismatch)"
+        android:text="Green = expected | Cyan = actual"
         android:textColor="#666666"
-        android:textSize="14sp"
+        android:textSize="12sp"
         android:gravity="center"
-        android:padding="8dp" />
+        android:paddingBottom="4dp" />
 
-    <!-- Spacer -->
-    <View
+    <!-- Button row -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1" />
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
 
-    <!-- Record button -->
-    <Button
-        android:id="@+id/recordButton"
-        android:layout_width="match_parent"
-        android:layout_height="80dp"
-        android:text="RECORD"
-        android:textSize="24sp"
-        android:textColor="#FFFFFF"
-        android:backgroundTint="#4CAF50" />
+        <!-- Record button -->
+        <Button
+            android:id="@+id/recordButton"
+            android:layout_width="0dp"
+            android:layout_height="60dp"
+            android:layout_weight="1"
+            android:text="RECORD"
+            android:textSize="14sp"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#4CAF50"
+            android:layout_marginEnd="2dp" />
+
+        <!-- Demo button -->
+        <Button
+            android:id="@+id/demoButton"
+            android:layout_width="0dp"
+            android:layout_height="60dp"
+            android:layout_weight="1"
+            android:text="DEMO"
+            android:textSize="14sp"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#FF9800"
+            android:layout_marginStart="2dp"
+            android:layout_marginEnd="2dp" />
+
+        <!-- Latency test button -->
+        <Button
+            android:id="@+id/latencyButton"
+            android:layout_width="0dp"
+            android:layout_height="60dp"
+            android:layout_weight="1"
+            android:text="LATENCY"
+            android:textSize="14sp"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#9C27B0"
+            android:layout_marginStart="2dp" />
+    </LinearLayout>
 
 </LinearLayout>

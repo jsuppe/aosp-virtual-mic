@@ -5,6 +5,7 @@
  * Build with Android NDK and push to device.
  */
 
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -30,20 +31,34 @@ static constexpr size_t BUFFER_SIZE = BUFFER_FRAMES * FRAME_SIZE;
 // Socket path
 static constexpr const char* SOCKET_PATH = "/data/vendor/virtualmic/virtual_mic.sock";
 
-// Audio buffer header (must match HAL's AudioBufferHeader)
-struct AudioBufferHeader {
-    uint32_t magic;           // 0x56434D46 ("VMIC")
-    uint32_t version;
-    uint32_t sampleRate;
-    uint32_t channels;
-    uint32_t format;          // 1 = PCM_16
-    uint32_t bufferSize;
-    uint32_t writePos;
-    uint32_t readPos;
-    uint32_t flags;
+// Audio format (must match HAL)
+enum class AudioFormat : uint32_t {
+    PCM_16_BIT = 1,
+    PCM_FLOAT = 3,
 };
 
-static constexpr uint32_t VMIC_MAGIC = 0x56434D46;
+// Audio buffer header (must match HAL's AudioBufferHeader exactly)
+struct AudioBufferHeader {
+    uint32_t magic;              // Must be 0x43494D56
+    uint32_t version;            // Must be 1
+    uint32_t sampleRate;
+    uint32_t channelCount;
+    AudioFormat format;
+    uint32_t bytesPerSample;
+    uint32_t ringBufferOffset;   // Offset from header start to ring buffer
+    uint32_t ringBufferSize;     // Total ring buffer size in bytes
+    std::atomic<uint32_t> writePos;
+    std::atomic<uint32_t> readPos;
+    std::atomic<uint64_t> totalSamplesWritten;
+    std::atomic<uint64_t> totalSamplesRead;
+    std::atomic<uint32_t> flags;
+    
+    static constexpr uint32_t FLAG_RENDERER_CONNECTED = 0x01;
+    static constexpr uint32_t FLAG_ACTIVE = 0x02;
+};
+
+static constexpr uint32_t VMIC_MAGIC = 0x43494D56;
+static constexpr uint32_t VMIC_VERSION = 1;
 
 // Create ashmem region
 int create_ashmem(const char* name, size_t size) {
@@ -68,8 +83,9 @@ int create_ashmem(const char* name, size_t size) {
     return fd;
 }
 
-// Send file descriptor over Unix socket
-bool send_fd(int socket, int fd) {
+// Send file descriptor and size over Unix socket
+bool send_fd_and_size(int socket, int fd, uint64_t size) {
+    // First send the fd via SCM_RIGHTS
     char buf[1] = {0};
     struct iovec iov = { .iov_base = buf, .iov_len = 1 };
     
@@ -90,6 +106,12 @@ bool send_fd(int socket, int fd) {
     
     if (sendmsg(socket, &msg, 0) < 0) {
         perror("Failed to send fd");
+        return false;
+    }
+    
+    // Then send the size
+    if (send(socket, &size, sizeof(size), 0) != sizeof(size)) {
+        perror("Failed to send size");
         return false;
     }
     
@@ -156,27 +178,32 @@ int main(int argc, char* argv[]) {
     // Initialize header
     AudioBufferHeader* header = static_cast<AudioBufferHeader*>(buffer);
     header->magic = VMIC_MAGIC;
-    header->version = 1;
+    header->version = VMIC_VERSION;
     header->sampleRate = SAMPLE_RATE;
-    header->channels = CHANNELS;
-    header->format = 1;  // PCM_16
-    header->bufferSize = BUFFER_SIZE;
-    header->writePos = 0;
-    header->readPos = 0;
-    header->flags = 0;
+    header->channelCount = CHANNELS;
+    header->format = AudioFormat::PCM_16_BIT;
+    header->bytesPerSample = BITS_PER_SAMPLE / 8;  // 2 for 16-bit
+    header->ringBufferOffset = sizeof(AudioBufferHeader);
+    header->ringBufferSize = BUFFER_SIZE;
+    header->writePos.store(0, std::memory_order_relaxed);
+    header->readPos.store(0, std::memory_order_relaxed);
+    header->totalSamplesWritten.store(0, std::memory_order_relaxed);
+    header->totalSamplesRead.store(0, std::memory_order_relaxed);
+    header->flags.store(AudioBufferHeader::FLAG_RENDERER_CONNECTED | AudioBufferHeader::FLAG_ACTIVE, 
+                        std::memory_order_release);
     
     int16_t* audio_data = reinterpret_cast<int16_t*>(
-        static_cast<uint8_t*>(buffer) + sizeof(AudioBufferHeader));
+        static_cast<uint8_t*>(buffer) + header->ringBufferOffset);
     
-    // Send fd to HAL
-    printf("Sending ashmem fd to HAL...\n");
-    if (!send_fd(sock, ashmem_fd)) {
+    // Send fd and size to HAL
+    printf("Sending ashmem fd and size to HAL...\n");
+    if (!send_fd_and_size(sock, ashmem_fd, total_size)) {
         munmap(buffer, total_size);
         close(ashmem_fd);
         close(sock);
         return 1;
     }
-    printf("Ashmem fd sent!\n");
+    printf("Ashmem fd sent! Size: %zu bytes\n", total_size);
     
     // Generate and write audio
     printf("Generating %d seconds of %.1f Hz sine wave...\n", duration_sec, frequency);
@@ -186,14 +213,16 @@ int main(int argc, char* argv[]) {
     int total_frames = SAMPLE_RATE * duration_sec;
     int frames_written = 0;
     
+    size_t buffer_frames = header->ringBufferSize / FRAME_SIZE;
+    
     while (frames_written < total_frames) {
         // Calculate how many frames we can write
-        uint32_t write_pos = header->writePos;
-        uint32_t read_pos = header->readPos;
+        uint32_t write_pos = header->writePos.load(std::memory_order_acquire);
+        uint32_t read_pos = header->readPos.load(std::memory_order_acquire);
         
         size_t available;
         if (write_pos >= read_pos) {
-            available = BUFFER_FRAMES - (write_pos - read_pos) - 1;
+            available = buffer_frames - (write_pos - read_pos) - 1;
         } else {
             available = read_pos - write_pos - 1;
         }
@@ -214,7 +243,8 @@ int main(int argc, char* argv[]) {
         if (phase >= 2.0 * M_PI) phase -= 2.0 * M_PI;
         
         // Update write position (atomic)
-        header->writePos = (write_pos + 1) % BUFFER_FRAMES;
+        header->writePos.store((write_pos + 1) % buffer_frames, std::memory_order_release);
+        header->totalSamplesWritten.fetch_add(1, std::memory_order_relaxed);
         frames_written++;
         
         // Progress
