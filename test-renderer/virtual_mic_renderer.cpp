@@ -29,7 +29,7 @@ static constexpr size_t BUFFER_FRAMES = 4096;
 static constexpr size_t BUFFER_SIZE = BUFFER_FRAMES * FRAME_SIZE;
 
 // Socket path
-static constexpr const char* SOCKET_PATH = "/data/vendor/virtualmic/virtual_mic.sock";
+static constexpr const char* SOCKET_PATH = "/data/local/tmp/virtual_mic.sock";
 
 // Audio format (must match HAL)
 enum class AudioFormat : uint32_t {
