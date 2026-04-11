@@ -4,3 +4,9 @@ service vendor.audio-virtualmic /vendor/bin/hw/android.hardware.audio.service.vi
     group audio
     capabilities SYS_NICE
     task_profiles ProcessCapacityHigh
+
+# Create data directory for the virtual mic socket.
+# hal_audio_default (the HAL service) binds its Unix-domain socket here.
+on post-fs-data
+    mkdir /data/vendor/virtualmic 0775 audioserver audio
+    restorecon_recursive /data/vendor/virtualmic

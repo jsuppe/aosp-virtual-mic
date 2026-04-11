@@ -26,8 +26,14 @@ VirtualMicSocket::~VirtualMicSocket() {
 }
 
 bool VirtualMicSocket::start() {
-    // /data/local/tmp must already exist — it's part of the base filesystem.
-    // No directory creation needed.
+    // Ensure the socket directory exists. It should be created at boot by
+    // init.rc (`mkdir /data/vendor/virtualmic ...`), but create it defensively
+    // in case the service is launched before post-fs-data.
+    const char* socketDir = "/data/vendor/virtualmic";
+    if (mkdir(socketDir, 0775) < 0 && errno != EEXIST) {
+        ALOGE("Failed to create socket directory %s: %s", socketDir, strerror(errno));
+        // Continue anyway — bind() below will fail with a clearer error
+    }
 
     // Create Unix domain socket
     mServerFd = socket(AF_UNIX, SOCK_STREAM, 0);

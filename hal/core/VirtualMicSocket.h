@@ -32,7 +32,7 @@ private:
     std::atomic<bool> mRunning{false};
     std::thread mAcceptThread;
 
-    static constexpr const char* SOCKET_PATH = "/data/local/tmp/virtual_mic.sock";
+    static constexpr const char* SOCKET_PATH = "/data/vendor/virtualmic/virtual_mic.sock";
 };
 
 }  // namespace virtualmic
