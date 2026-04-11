@@ -1,21 +1,26 @@
 // Virtual Mic Test Renderer
-// Build and push to device to test the virtual mic HAL
+//
+// Vendor daemon that generates a 440 Hz sine tone and streams it into
+// the virtual mic HAL via shared memory. Runs in its own SELinux domain
+// (virtualmic_renderer) so it can legally connect to the HAL's Unix
+// socket — core-to-vendor socket connections are blocked by Treble.
 
 cc_binary {
-    name: "virtual_mic_renderer",
+    name: "virtualmic-renderer",
     srcs: ["virtual_mic_renderer.cpp"],
-    
+
+    init_rc: ["virtualmic-renderer.rc"],
+
     cflags: [
         "-Wall",
         "-Werror",
         "-Wno-unused-parameter",
     ],
-    
+
     shared_libs: [
         "liblog",
         "libcutils",
     ],
-    
-    // For development/testing only
+
     vendor: true,
 }

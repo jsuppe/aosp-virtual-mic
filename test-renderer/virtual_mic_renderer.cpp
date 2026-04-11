@@ -148,12 +148,20 @@ int main(int argc, char* argv[]) {
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
     strncpy(addr.sun_path, SOCKET_PATH, sizeof(addr.sun_path) - 1);
-    
+
     printf("Connecting to %s...\n", SOCKET_PATH);
-    if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        perror("Failed to connect");
-        close(sock);
-        return 1;
+    // Retry for up to 30 seconds — at boot, the HAL service may not have
+    // created the socket yet.
+    int attempts = 0;
+    while (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        if (++attempts >= 30) {
+            perror("Failed to connect after 30 attempts");
+            close(sock);
+            return 1;
+        }
+        printf("  connect attempt %d failed (%s), retrying in 1s...\n",
+               attempts, strerror(errno));
+        sleep(1);
     }
     printf("Connected!\n");
     
@@ -205,17 +213,23 @@ int main(int argc, char* argv[]) {
     }
     printf("Ashmem fd sent! Size: %zu bytes\n", total_size);
     
-    // Generate and write audio
-    printf("Generating %d seconds of %.1f Hz sine wave...\n", duration_sec, frequency);
-    
+    // Generate and write audio.
+    // duration_sec == 0 means run forever (daemon mode).
+    bool infinite = (duration_sec == 0);
+    if (infinite) {
+        printf("Generating %.1f Hz sine wave indefinitely (daemon mode)...\n", frequency);
+    } else {
+        printf("Generating %d seconds of %.1f Hz sine wave...\n", duration_sec, frequency);
+    }
+
     double phase = 0.0;
     double phase_increment = 2.0 * M_PI * frequency / SAMPLE_RATE;
     int total_frames = SAMPLE_RATE * duration_sec;
     int frames_written = 0;
-    
+
     size_t buffer_frames = header->ringBufferSize / FRAME_SIZE;
-    
-    while (frames_written < total_frames) {
+
+    while (infinite || frames_written < total_frames) {
         // Calculate how many frames we can write
         uint32_t write_pos = header->writePos.load(std::memory_order_acquire);
         uint32_t read_pos = header->readPos.load(std::memory_order_acquire);
@@ -247,9 +261,13 @@ int main(int argc, char* argv[]) {
         header->totalSamplesWritten.fetch_add(1, std::memory_order_relaxed);
         frames_written++;
         
-        // Progress
+        // Progress (every second of audio)
         if (frames_written % SAMPLE_RATE == 0) {
-            printf("  %d/%d seconds\n", frames_written / SAMPLE_RATE, duration_sec);
+            if (infinite) {
+                printf("  written %d seconds of audio\n", frames_written / SAMPLE_RATE);
+            } else {
+                printf("  %d/%d seconds\n", frames_written / SAMPLE_RATE, duration_sec);
+            }
         }
     }
     

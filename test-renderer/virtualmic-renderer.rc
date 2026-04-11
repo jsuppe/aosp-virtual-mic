@@ -1,0 +1,20 @@
+# Test renderer for the virtual microphone HAL.
+# Launched at boot as a vendor daemon so it has a vendor SELinux domain
+# (virtualmic_renderer) that can connect to the HAL's Unix socket.
+# Core-to-vendor socket connections are blocked by Treble neverallow,
+# so shell/adb can't connect directly — the producer must be vendor.
+#
+# Continuously writes a 440 Hz tone into the ring buffer.
+# The audio flows: renderer -> ring buffer -> HAL -> AudioFlinger -> AudioRecord
+
+service vendor.virtualmic-renderer /vendor/bin/virtualmic-renderer 440 0.5 0
+    class late_start
+    user audioserver
+    group audio
+    seclabel u:r:virtualmic_renderer:s0
+    oneshot
+    # Restart if it exits (connection to HAL drops, etc.)
+    onrestart restart vendor.virtualmic-renderer
+
+on property:sys.boot_completed=1
+    start vendor.virtualmic-renderer
