@@ -1,129 +1,81 @@
 # Virtual Microphone HAL
 
-Audio input HAL that receives PCM samples from renderer apps via shared memory.
+Audio input HAL that receives PCM samples from renderer apps via a
+shared-memory ring buffer. The HAL is split into a version-independent
+core and one adapter per supported Android Audio HAL version so a single
+pipeline implementation can front multiple Android releases.
 
-## Architecture
-
-```
-┌──────────────────────┐        ┌────────────────────────────┐
-│   Renderer App       │        │    Virtual Mic HAL         │
-│                      │        │                            │
-│  VirtualMicClient    │        │  VirtualMicSocket          │
-│  - Create ashmem     │───────►│  - Accept connections      │
-│  - Connect socket    │ socket │  - Receive ashmem fd       │
-│  - Write PCM samples │        │                            │
-│                      │        │  VirtualMicSource          │
-│  ┌────────────────┐  │        │  - mmap shared memory      │
-│  │ Ring Buffer    │◄─┼────────┼──│ - Read PCM samples       │
-│  │ (ashmem)       │  │        │                            │
-│  └────────────────┘  │        │  VirtualMicStream          │
-└──────────────────────┘        │  - Provide to AudioFlinger │
-                                └────────────────────────────┘
-```
-
-## Shared Memory Layout
+## Directory layout
 
 ```
-┌─────────────────────────────────────────────────┐
-│ AudioBufferHeader (64 bytes)                    │
-│ - magic: 0x43494D56 ("VMIC")                    │
-│ - sampleRate, channelCount, format              │
-│ - ringBufferOffset, ringBufferSize              │
-│ - writePos (atomic), readPos (atomic)           │
-├─────────────────────────────────────────────────┤
-│ Ring Buffer (configurable size)                 │
-│ ┌─────────────────────────────────────────────┐ │
-│ │ PCM samples (16-bit signed)                 │ │
-│ │                                             │ │
-│ │ writePos ──►  ▓▓▓▓▓▓▓░░░░░░░░░░             │ │
-│ │               ◄── readPos                   │ │
-│ └─────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────┘
+hal/
+  core/         # Pure C++ shared pipeline (no AIDL/HIDL deps)
+  aidl-v2/      # AIDL Audio Core HAL V2 adapter (Android 14+)
+  hidl-v7/      # HIDL Audio HAL 7.x adapter (Android 13 and older)
 ```
 
-## Files
+Each subdirectory carries its own `Android.bp`. The top-level
+`hal/Android.bp` is intentionally empty — Soong discovers subdirectories
+automatically.
 
-### HAL Components
-- `AudioBufferHeader.h` - Shared memory layout definition
-- `VirtualMicSource.h/.cpp` - Reads audio from shared memory
-- `VirtualMicSocket.h/.cpp` - Unix socket server for fd passing
-- `VirtualMicModule.cpp` - Audio HAL module (TODO)
-- `VirtualMicStream.cpp` - Audio input stream (TODO)
-- `service.cpp` - HAL service entry point (TODO)
+### `core/`
 
-### Renderer Library
-- `renderer-lib/VirtualMicClient.h/.cpp` - Client for injecting audio
+- `AudioBufferHeader.h` — Shared-memory layout and ring-buffer helpers.
+- `VirtualMicSource.{h,cpp}` — Maps the renderer's ashmem and reads PCM.
+- `VirtualMicSocket.{h,cpp}` — Unix domain socket server that receives
+  the ashmem fd via `SCM_RIGHTS`.
+- `Android.bp` — Builds `virtual-mic-core` (`cc_library_static`).
 
-### Build
-- `Android.bp` - Build configuration
+Core code lives in the plain `virtualmic` namespace and takes/returns
+plain C++ types. It has no dependency on any Android HAL interface.
 
-## Socket Protocol
+### `aidl-v2/`
 
-1. Renderer creates ashmem with `ASharedMemory_create()`
-2. Renderer connects to `/data/local/tmp/virtual_mic.sock`
-3. Renderer sends fd via `SCM_RIGHTS`
-4. Renderer sends buffer size as uint64_t
-5. HAL maps the shared memory read-only
-6. Renderer writes PCM samples to ring buffer
-7. HAL reads samples and provides to AudioFlinger
+Adapter for the AIDL Audio Core HAL V2 (`android.hardware.audio.core`
+version 2, introduced in Android 14).
 
-## Audio Format
+- `include/core-impl/ModuleVirtualMic.h`
+- `include/core-impl/StreamVirtualMic.h`
+- `ModuleVirtualMic.cpp` — `Module` subclass that owns a
+  `virtualmic::VirtualMicSource` and exposes it as `IModule/virtualmic`.
+- `StreamVirtualMic.cpp` — `StreamCommonImpl` / `StreamIn` subclass that
+  pulls PCM frames from the core source inside `transfer()`.
+- `service.cpp` — Optional standalone service entry point. In the
+  primary deployment path `ModuleVirtualMic` is loaded by AOSP's
+  existing `android.hardware.audio.service` binary via
+  `Module::createInstance(Type::VIRTUALMIC)`; this file lets the HAL
+  also be built as its own process for isolated testing.
+- `android.hardware.audio.service.virtualmic.rc`
+- `android.hardware.audio.service.virtualmic.xml` — VINTF fragment.
+- `Android.bp` — Builds `android.hardware.audio.virtualmic-impl`
+  (`cc_library_shared`) and `android.hardware.audio.service.virtualmic`
+  (`cc_binary`), both statically linking `virtual-mic-core`.
 
-- Sample Rate: Configurable (default 48000 Hz)
-- Channels: Mono (1) or Stereo (2)
-- Format: 16-bit signed PCM
-- Buffer: Ring buffer with configurable size
+The adapter consumes core headers via `include_dirs:
+["hardware/interfaces/audio/virtualmic/core"]` because Soong disallows
+`..` in `local_include_dirs`.
 
-## Status
+### `hidl-v7/`
 
-- [x] AudioBufferHeader - Shared memory layout
-- [x] VirtualMicSource - Read from shared memory  
-- [x] VirtualMicSocket - Socket server
-- [x] VirtualMicClient - Renderer library
-- [x] VirtualMicModule - Audio module (simplified)
-- [x] VirtualMicStream - Audio input stream
-- [ ] AIDL HAL integration - Wrap in proper AIDL interfaces
-- [ ] audio_policy_configuration.xml - Add virtual mic device
-- [ ] init.rc, VINTF manifest
-- [ ] Build integration into AOSP
-- [ ] Test app
+Adapter for the HIDL Audio HAL 7.x. Maintained alongside `aidl-v2/` for
+devices that have not yet migrated to the AIDL HAL. See that directory
+for details.
 
-## AOSP Integration Path
+## Shared memory protocol
 
-The Android Audio HAL is more complex than Camera HAL. Full integration requires:
+1. Renderer creates ashmem with `ASharedMemory_create()`.
+2. Renderer connects to `/data/vendor/virtualmic/virtual_mic.sock`.
+3. Renderer sends the fd via `SCM_RIGHTS`, then sends the buffer size as
+   a `uint64_t`.
+4. HAL maps the region and validates `AudioBufferHeader.magic/version`.
+5. Renderer writes PCM into the ring buffer; HAL reads and forwards to
+   AudioFlinger through the version-specific stream adapter.
 
-### 1. Create Module Type
-Add to `hardware/interfaces/audio/aidl/default/`:
-```cpp
-// Module.cpp - Add to typeFromString()
-case "virtualmic":
-    return Module::Type::VIRTUALMIC;
+See `core/AudioBufferHeader.h` for the exact layout.
 
-// Add ModuleVirtualMic.cpp similar to ModuleRemoteSubmix.cpp
-```
+## Audio format
 
-### 2. Audio Policy Configuration
-Add device to `audio_policy_configuration.xml`:
-```xml
-<module name="virtualmic" halVersion="3.0">
-    <mixPorts>
-        <mixPort name="virtual_mic_input" role="sink">
-            <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
-                     samplingRates="48000"
-                     channelMasks="AUDIO_CHANNEL_IN_MONO"/>
-        </mixPort>
-    </mixPorts>
-    <devicePorts>
-        <devicePort tagName="Virtual Mic In" type="AUDIO_DEVICE_IN_REMOTE_SUBMIX" role="source">
-            <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
-                     samplingRates="48000"
-                     channelMasks="AUDIO_CHANNEL_IN_MONO"/>
-        </devicePort>
-    </devicePorts>
-</module>
-```
-
-### 3. Alternative: Standalone Service
-For quicker testing, can run as standalone service that:
-- Registers with ServiceManager
-- Provides audio via alternative path (AudioRecord with specific source)
+- Sample rate: configurable (default 48000 Hz)
+- Channels: mono (1) or stereo (2)
+- Format: 16-bit signed PCM (`PCM_16_BIT`) or float (`PCM_FLOAT`)
+- Transport: ring buffer with `writePos` / `readPos` atomics

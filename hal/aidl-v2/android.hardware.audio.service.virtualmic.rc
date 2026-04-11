@@ -1,0 +1,15 @@
+service vendor.audio-virtualmic-hal /vendor/bin/hw/android.hardware.audio.service.virtualmic
+    class hal
+    user audioserver
+    group audio media
+    capabilities BLOCK_SUSPEND
+    ioprio rt 4
+    task_profiles ProcessCapacityHigh HighPerformance
+    onrestart restart audioserver
+
+# Create virtualmic socket directory at boot for the HAL to bind its
+# Unix domain socket in. The `core` component expects it at
+# /data/vendor/virtualmic/virtual_mic.sock.
+on post-fs-data
+    mkdir /data/vendor/virtualmic 0770 audioserver audio
+    restorecon /data/vendor/virtualmic

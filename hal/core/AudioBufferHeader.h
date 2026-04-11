@@ -3,6 +3,9 @@
  *
  * Similar to FrameHeader for camera, but designed for audio streaming.
  * Uses a ring buffer for continuous audio flow.
+ *
+ * This header lives in the HAL-version-independent core. It has no
+ * dependency on AIDL/HIDL types and can be shared by any adapter layer.
  */
 
 #pragma once
@@ -10,7 +13,7 @@
 #include <cstdint>
 #include <atomic>
 
-namespace aidl::android::hardware::audio::virtualmic {
+namespace virtualmic {
 
 // Magic number: "VMIC" in little-endian
 constexpr uint32_t AUDIO_BUFFER_MAGIC = 0x43494D56;
@@ -27,58 +30,55 @@ enum class AudioFormat : uint32_t {
 /**
  * Shared memory layout:
  *
- * ┌─────────────────────────────────────────────────────────────┐
- * │ AudioBufferHeader (64 bytes)                                │
- * ├─────────────────────────────────────────────────────────────┤
- * │ Ring Buffer (configurable size)                             │
- * │ ┌─────────────────────────────────────────────────────────┐ │
- * │ │ Audio samples (PCM data)                                │ │
- * │ │                                                         │ │
- * │ │   writePos ────►  ▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░                │ │
- * │ │                   ◄─── readPos                          │ │
- * │ └─────────────────────────────────────────────────────────┘ │
- * └─────────────────────────────────────────────────────────────┘
+ * +-------------------------------------------------------------+
+ * | AudioBufferHeader (64 bytes)                                |
+ * +-------------------------------------------------------------+
+ * | Ring Buffer (configurable size)                             |
+ * |   Audio samples (PCM data)                                  |
+ * |     writePos -->  ##########..............                  |
+ * |                   <-- readPos                               |
+ * +-------------------------------------------------------------+
  */
 
 struct AudioBufferHeader {
     // Identification
     uint32_t magic;          // Must be AUDIO_BUFFER_MAGIC
     uint32_t version;        // Header version
-    
+
     // Audio configuration (set by renderer)
     uint32_t sampleRate;     // e.g., 48000
     uint32_t channelCount;   // 1 = mono, 2 = stereo
     AudioFormat format;      // PCM format
     uint32_t bytesPerSample; // e.g., 2 for 16-bit, 4 for float
-    
+
     // Ring buffer configuration
     uint32_t ringBufferOffset;  // Offset from header start to ring buffer
     uint32_t ringBufferSize;    // Total ring buffer size in bytes
-    
+
     // Ring buffer state (atomics for lock-free operation)
     std::atomic<uint32_t> writePos;  // Write position (renderer updates)
     std::atomic<uint32_t> readPos;   // Read position (HAL updates)
-    
+
     // Statistics
     std::atomic<uint64_t> totalSamplesWritten;
     std::atomic<uint64_t> totalSamplesRead;
-    
+
     // Flags
     std::atomic<uint32_t> flags;
-    
+
     // Flag definitions
     static constexpr uint32_t FLAG_RENDERER_CONNECTED = 0x01;
     static constexpr uint32_t FLAG_ACTIVE = 0x02;
-    
+
     // Helper methods
     bool isValid() const {
         return magic == AUDIO_BUFFER_MAGIC && version == AUDIO_BUFFER_VERSION;
     }
-    
+
     uint32_t frameSize() const {
         return channelCount * bytesPerSample;
     }
-    
+
     uint32_t availableToRead() const {
         uint32_t wp = writePos.load(std::memory_order_acquire);
         uint32_t rp = readPos.load(std::memory_order_relaxed);
@@ -88,7 +88,7 @@ struct AudioBufferHeader {
             return ringBufferSize - rp + wp;
         }
     }
-    
+
     uint32_t availableToWrite() const {
         return ringBufferSize - availableToRead() - 1;  // -1 to distinguish full from empty
     }
@@ -97,4 +97,4 @@ struct AudioBufferHeader {
 // Note: Size may vary by platform due to atomic alignment
 // static_assert(sizeof(AudioBufferHeader) == 64, "AudioBufferHeader must be 64 bytes");
 
-}  // namespace aidl::android::hardware::audio::virtualmic
+}  // namespace virtualmic

@@ -19,9 +19,11 @@
 
 #include "core-impl/ModuleVirtualMic.h"
 #include "core-impl/StreamVirtualMic.h"
+
+// Core pipeline (version-independent).
 #include "VirtualMicSource.h"
 
-using aidl::android::hardware::audio::virtualmic::VirtualMicSource;
+using ::virtualmic::VirtualMicSource;
 
 using aidl::android::hardware::audio::common::SinkMetadata;
 using aidl::android::hardware::audio::common::SourceMetadata;
@@ -66,7 +68,7 @@ ndk::ScopedAStatus ModuleVirtualMic::createInputStream(
         const std::vector<MicrophoneInfo>& microphones,
         std::shared_ptr<StreamIn>* result) {
     LOG(INFO) << __func__ << ": Creating virtual mic input stream";
-    return createStreamInstance<StreamInVirtualMic>(result, std::move(context), 
+    return createStreamInstance<StreamInVirtualMic>(result, std::move(context),
                                                      sinkMetadata, microphones, mSource);
 }
 

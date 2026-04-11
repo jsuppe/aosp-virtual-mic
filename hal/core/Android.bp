@@ -1,0 +1,41 @@
+/*
+ * Virtual Microphone HAL - Core (version-independent)
+ *
+ * Pure C++ pipeline with no AIDL/HIDL dependency. Consumed by the
+ * aidl-v2 adapter (Android 14+) and the hidl-v7 adapter (Android 13-).
+ */
+
+package {
+    default_applicable_licenses: ["hardware_interfaces_license"],
+}
+
+cc_library_static {
+    name: "virtual-mic-core",
+    vendor: true,
+
+    srcs: [
+        "VirtualMicSource.cpp",
+        "VirtualMicSocket.cpp",
+    ],
+
+    export_include_dirs: ["."],
+
+    shared_libs: [
+        "libbase",
+        "libcutils",
+        "liblog",
+        "libutils",
+    ],
+
+    cflags: [
+        "-Wall",
+        "-Wno-unused-parameter",
+    ],
+
+    // Available for use inside the standard AOSP audio HAL and any
+    // APEXes that might ship the virtual mic adapter in the future.
+    apex_available: [
+        "//apex_available:platform",
+        "//apex_available:anyapex",
+    ],
+}

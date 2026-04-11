@@ -20,9 +20,11 @@
 #include <cstring>
 
 #include "core-impl/StreamVirtualMic.h"
+
+// Core pipeline (version-independent).
 #include "VirtualMicSource.h"
 
-using aidl::android::hardware::audio::virtualmic::VirtualMicSource;
+using ::virtualmic::VirtualMicSource;
 
 using aidl::android::hardware::audio::common::SinkMetadata;
 using aidl::android::media::audio::common::MicrophoneInfo;
@@ -36,7 +38,7 @@ StreamVirtualMic::StreamVirtualMic(StreamContext* context, const Metadata& metad
       mBufferSizeFrames(context->getBufferSizeInFrames()),
       mFrameSizeBytes(context->getFrameSize()),
       mSampleRate(context->getSampleRate()) {
-    LOG(DEBUG) << __func__ << ": buffer=" << mBufferSizeFrames 
+    LOG(DEBUG) << __func__ << ": buffer=" << mBufferSizeFrames
                << " frames, frameSize=" << mFrameSizeBytes
                << ", sampleRate=" << mSampleRate;
 }
@@ -100,17 +102,17 @@ StreamVirtualMic::~StreamVirtualMic() {
     if (mIsStandby) {
         LOG(FATAL) << __func__ << ": called while in standby";
     }
-    
+
     // Read audio data from shared memory source
     size_t bytesToRead = frameCount * mFrameSizeBytes;
     size_t bytesRead = mSource->read(buffer, bytesToRead);
     *actualFrameCount = bytesRead / mFrameSizeBytes;
-    
+
     // Calculate latency
     if (latencyMs) {
         *latencyMs = 20;  // Nominal 20ms latency
     }
-    
+
     // Timing: simulate real-time audio capture rate
     mFramesSinceStart += *actualFrameCount;
     static constexpr float kMicrosPerSecond = MICROS_PER_SECOND;
@@ -119,13 +121,13 @@ StreamVirtualMic::~StreamVirtualMic() {
             (::android::uptimeNanos() - mStartTimeNs) / NANOS_PER_MICROSECOND;
     const long totalOffsetUs =
             mFramesSinceStart * kMicrosPerSecond / mSampleRate - totalDurationUs;
-    
+
     if (totalOffsetUs > 0) {
         const long sleepTimeUs = std::min(totalOffsetUs, bufferDurationUs);
         LOG(VERBOSE) << __func__ << ": sleeping for " << sleepTimeUs << " us";
         usleep(sleepTimeUs);
     }
-    
+
     return ::android::OK;
 }
 
