@@ -14,7 +14,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/mman.h>
-#include <linux/ashmem.h>
+#include <cutils/ashmem.h>   // ashmem_create_region — NOT /dev/ashmem directly
 #include <fcntl.h>
 #include <errno.h>
 
@@ -60,26 +60,14 @@ struct AudioBufferHeader {
 static constexpr uint32_t VMIC_MAGIC = 0x43494D56;
 static constexpr uint32_t VMIC_VERSION = 1;
 
-// Create ashmem region
+// Create ashmem region via libcutils API (never open /dev/ashmem directly —
+// neverallow rule domain.te:1347).
 int create_ashmem(const char* name, size_t size) {
-    int fd = open("/dev/ashmem", O_RDWR);
+    int fd = ashmem_create_region(name, size);
     if (fd < 0) {
-        perror("Failed to open /dev/ashmem");
+        perror("ashmem_create_region failed");
         return -1;
     }
-    
-    if (ioctl(fd, ASHMEM_SET_NAME, name) < 0) {
-        perror("Failed to set ashmem name");
-        close(fd);
-        return -1;
-    }
-    
-    if (ioctl(fd, ASHMEM_SET_SIZE, size) < 0) {
-        perror("Failed to set ashmem size");
-        close(fd);
-        return -1;
-    }
-    
     return fd;
 }
 
