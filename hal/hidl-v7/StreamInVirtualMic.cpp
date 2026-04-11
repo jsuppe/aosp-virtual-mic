@@ -53,7 +53,7 @@ public:
                StreamInVirtualMic::StatusMQ* statusMQ,
                EventFlag* efGroup,
                std::atomic<uint64_t>* framesRead,
-               uint32_t sampleRateHz,
+               uint32_t /*sampleRateHz*/,
                uint64_t frameSizeBytes)
         : Thread(false /*canCallJava*/),
           mStop(stop),
@@ -63,7 +63,6 @@ public:
           mStatusMQ(statusMQ),
           mEfGroup(efGroup),
           mFramesRead(framesRead),
-          mSampleRateHz(sampleRateHz),
           mFrameSizeBytes(frameSizeBytes) {}
 
     bool init() {
@@ -81,7 +80,6 @@ private:
     StreamInVirtualMic::StatusMQ* mStatusMQ;
     EventFlag* mEfGroup;
     std::atomic<uint64_t>* mFramesRead;
-    uint32_t mSampleRateHz;
     uint64_t mFrameSizeBytes;
 
     std::unique_ptr<uint8_t[]> mBuffer;
