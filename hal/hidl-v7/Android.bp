@@ -47,7 +47,11 @@ cc_binary {
     vendor: true,
     relative_install_path: "hw",
     init_rc: ["android.hardware.audio.service.virtualmic.rc"],
-    vintf_fragments: ["android.hardware.audio.service.virtualmic.xml"],
+    // Note: VINTF fragment is intentionally NOT declared here.
+    // The @7.1 IDevicesFactory interface is already declared by the
+    // device audio HAL manifest (e.g. Cuttlefish's audio@7.1-impl.ranchu.xml).
+    // The device manifest must list "virtualmic" as an additional instance
+    // alongside "default" under that existing <interface> block.
 
     srcs: ["service.cpp"],
 
