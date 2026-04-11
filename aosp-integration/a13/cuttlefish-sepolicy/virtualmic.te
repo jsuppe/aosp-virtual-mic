@@ -1,0 +1,24 @@
+# SELinux policy for Virtual Microphone HAL + test renderer
+
+type virtualmic_data_file, file_type, data_file_type;
+type virtualmic_renderer, domain;
+type virtualmic_renderer_exec, exec_type, vendor_file_type, file_type;
+
+# ---- HAL side (hal_audio_default) ----
+allow hal_audio_default virtualmic_data_file:dir { create search read write add_name remove_name getattr setattr open };
+allow hal_audio_default virtualmic_data_file:sock_file { create unlink getattr setattr read write open };
+allow hal_audio_default self:unix_stream_socket { create bind listen accept read write getattr setattr };
+
+# Allow the HAL to receive and use ashmem fds handed over by the renderer
+allow hal_audio_default virtualmic_renderer:fd use;
+
+# ---- Renderer side (virtualmic_renderer) ----
+init_daemon_domain(virtualmic_renderer)
+
+allow virtualmic_renderer hal_audio_default:unix_stream_socket connectto;
+allow virtualmic_renderer virtualmic_data_file:dir { search getattr };
+allow virtualmic_renderer virtualmic_data_file:sock_file { read write getattr };
+allow virtualmic_renderer self:unix_stream_socket { create connect read write };
+
+# The renderer needs to pass fds to the HAL over the socket
+allow virtualmic_renderer hal_audio_default:fd use;
