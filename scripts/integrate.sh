@@ -79,6 +79,12 @@ fi
 
 echo "   ✓ Copied hal/core/ and hal/${HAL_VARIANT}/"
 
+# Also install the test-renderer (virtualmic-renderer vendor daemon)
+RENDERER_DEST="$AOSP_ROOT/vendor/virtualmic-renderer"
+mkdir -p "$RENDERER_DEST"
+rsync -a --delete "$REPO_ROOT/test-renderer/" "$RENDERER_DEST/"
+echo "   ✓ Copied test-renderer/ → vendor/virtualmic-renderer/"
+
 # 2. Apply version-specific fixups
 if [[ "$HAL_VARIANT" == "hidl-v7" ]]; then
     echo "[2/3] Applying A13 HIDL fixups..."
